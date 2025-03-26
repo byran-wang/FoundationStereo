@@ -72,12 +72,16 @@ if __name__=="__main__":
   img1 = torch.as_tensor(img1).cuda().float()[None].permute(0,3,1,2)
   padder = InputPadder(img0.shape, divis_by=32, force_square=False)
   img0, img1 = padder.pad(img0, img1)
-
+  import time
+  start_time = time.time()
   with torch.cuda.amp.autocast(True):
     if not args.hiera:
       disp = model.forward(img0, img1, iters=args.valid_iters, test_mode=True)
     else:
       disp = model.run_hierachical(img0, img1, iters=args.valid_iters, test_mode=True, small_ratio=0.5)
+  end_time = time.time()
+  elapsed = end_time - start_time
+  print(f"forward time: {elapsed:.4f} seconds")
   disp = padder.unpad(disp.float())
   disp = disp.data.cpu().numpy().reshape(H,W)
   vis = vis_disparity(disp)
@@ -109,7 +113,11 @@ if __name__=="__main__":
 
     if args.denoise_cloud:
       logging.info("denoise point cloud...")
+      start_time = time.time()
       cl, ind = pcd.remove_radius_outlier(nb_points=args.denoise_nb_points, radius=args.denoise_radius)
+      end_time = time.time()
+      elapsed = end_time - start_time
+      print(f"denoise time: {elapsed:.4f} seconds")
       inlier_cloud = pcd.select_by_index(ind)
       o3d.io.write_point_cloud(f'{args.out_dir}/cloud_denoise.ply', inlier_cloud)
       pcd = inlier_cloud
