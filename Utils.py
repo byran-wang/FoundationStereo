@@ -53,7 +53,7 @@ def toOpen3dCloud(points,colors=None,normals=None):
 
 
 
-def depth2xyzmap(depth:np.ndarray, K, uvs:np.ndarray=None, zmin=0.1):
+def depth2xyzmap(depth:np.ndarray, K, uvs:np.ndarray=None, zmin=0.03):
   invalid_mask = (depth<zmin)
   H,W = depth.shape[:2]
   if uvs is None:
