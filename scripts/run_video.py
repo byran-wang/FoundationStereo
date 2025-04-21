@@ -16,6 +16,18 @@ from Utils import *
 from core.foundation_stereo import *
 import glob
 
+def save_depth(depth, filename):
+    depth = np.nan_to_num(depth, nan=0.0)
+    depth[depth > 8.0] = 0
+    # Set depth to 0 if NaN
+    depth_scaled = (depth / args.depth_scale).astype(np.uint16)
+    depth_lsb = np.bitwise_and(depth_scaled, 0xFF)  # Least significant byte
+    depth_msb = np.right_shift(depth_scaled, 8)  # Most significant byte
+    depth_encoded = np.zeros((depth.shape[0], depth.shape[1], 3), dtype=np.uint8)
+    depth_encoded[..., 2] = depth_lsb
+    depth_encoded[..., 1] = depth_msb    
+    cv2.imwrite(filename, depth_encoded)
+
 if __name__=="__main__":
   code_dir = os.path.dirname(os.path.realpath(__file__))
   parser = argparse.ArgumentParser()
@@ -34,13 +46,16 @@ if __name__=="__main__":
   parser.add_argument('--visualize_cloud', action='store_true', help='whether to visualize the point cloud')
   parser.add_argument('--denoise_nb_points', type=int, default=30, help='number of points to consider for radius outlier removal')
   parser.add_argument('--denoise_radius', type=float, default=0.03, help='radius to use for outlier removal')
+  parser.add_argument('--ply_interval', type=int, default=1, help='interval to save point cloud')
+  parser.add_argument('--ply_dir', type=str, default='ply', help='directory to save point cloud')
+  parser.add_argument('--depth_scale', type=float, default=0.00012498664727900177, help='depth scale')
   args = parser.parse_args()
 
   set_logging_format()
   set_seed(0)
   torch.autograd.set_grad_enabled(False)
   os.makedirs(args.out_dir, exist_ok=True)
-
+  os.makedirs(args.ply_dir, exist_ok=True)
   ckpt_dir = args.ckpt_dir
   cfg = OmegaConf.load(f'{os.path.dirname(ckpt_dir)}/cfg.yaml')
   for k in args.__dict__:
@@ -60,13 +75,21 @@ if __name__=="__main__":
 
   code_dir = os.path.dirname(os.path.realpath(__file__))
 
-  left_files = sorted(glob.glob(os.path.join(args.left_dir, 'left*.png')))
-  right_files = sorted(glob.glob(os.path.join(args.right_dir, 'right*.png')))
+  left_files = sorted(glob.glob(os.path.join(args.left_dir, '*_left.png')))
+  right_files = sorted(glob.glob(os.path.join(args.right_dir, '*_right.png')))
   assert len(left_files) == len(right_files), "left and right files must have the same number of images"
-  for left_file in left_files:
-    left_file_index = left_file.split('/')[-1].split('.')[0].split('left')[-1]
+
+  with open(args.intrinsic_file, 'rb') as f:
+    data = pickle.load(f)
+    K = data['stereo_camMat']
+    baseline = data['stereo_baseline']
+  scale = args.scale
+  K[:2] *= scale    
+
+  for i, left_file in enumerate(left_files):
+    left_file_index = left_file.split('/')[-1].split('.')[0].split('_left')[0]
     print(f"Processing... {left_file_index}")
-    right_file = f"{args.right_dir}/right{left_file_index}.png"
+    right_file = f"{args.right_dir}/{left_file_index}_right.png"
     assert os.path.exists(right_file), f"right file {right_file} does not exist"
     img0 = imageio.imread(left_file)[:,:,:3]
     img1 = imageio.imread(right_file)[:,:,:3]
@@ -99,27 +122,24 @@ if __name__=="__main__":
     imageio.imwrite(f'{args.out_dir}/vis{left_file_index}.png', vis)
     logging.info(f"Output saved to {args.out_dir}")
 
+    depth = K[0,0]*baseline/disp
+    save_depth(depth, f'{args.out_dir}/{left_file_index}.png')
+
     if args.remove_invisible:
       yy,xx = np.meshgrid(np.arange(disp.shape[0]), np.arange(disp.shape[1]), indexing='ij')
       us_right = xx-disp
       invalid = us_right<0
       disp[invalid] = np.inf
 
-    if args.get_pc:
-      with open(args.intrinsic_file, 'r') as f:
-        lines = f.readlines()
-        K = np.array(list(map(float, lines[0].rstrip().split()))).astype(np.float32).reshape(3,3)
-        baseline = float(lines[1])
-      K[:2] *= scale
-      depth = K[0,0]*baseline/disp
-      np.save(f'{args.out_dir}/depth_meter{left_file_index}.npy', depth)
+    if args.get_pc and i % args.ply_interval == 0:
+
       xyz_map = depth2xyzmap(depth, K)
       pcd = toOpen3dCloud(xyz_map.reshape(-1,3), img0_ori.reshape(-1,3))
       keep_mask = (np.asarray(pcd.points)[:,2]>0) & (np.asarray(pcd.points)[:,2]<=args.z_far)
       keep_ids = np.arange(len(np.asarray(pcd.points)))[keep_mask]
       pcd = pcd.select_by_index(keep_ids)
-      o3d.io.write_point_cloud(f'{args.out_dir}/cloud{left_file_index}.ply', pcd)
-      logging.info(f"PCL saved to {args.out_dir}")
+      o3d.io.write_point_cloud(f'{args.ply_dir}/{left_file_index}.ply', pcd)
+      logging.info(f"PCL saved to {args.ply_dir}")
 
       if args.denoise_cloud:
         logging.info("denoise point cloud...")
@@ -129,7 +149,7 @@ if __name__=="__main__":
         elapsed = end_time - start_time
         print(f"denoise time: {elapsed:.4f} seconds")
         inlier_cloud = pcd.select_by_index(ind)
-        o3d.io.write_point_cloud(f'{args.out_dir}/cloud_denoise{left_file_index}.ply', inlier_cloud)
+        o3d.io.write_point_cloud(f'{args.ply_dir}/cloud_denoise{left_file_index}.ply', inlier_cloud)
         pcd = inlier_cloud
 
       if args.visualize_cloud:
