@@ -49,6 +49,7 @@ if __name__=="__main__":
   parser.add_argument('--ply_interval', type=int, default=1, help='interval to save point cloud')
   parser.add_argument('--ply_dir', type=str, default='ply', help='directory to save point cloud')
   parser.add_argument('--depth_scale', type=float, default=0.00012498664727900177, help='depth scale')
+  parser.add_argument('--realsense', action='store_true', help='whether to use realsense images')
   args = parser.parse_args()
 
   set_logging_format()
@@ -74,9 +75,12 @@ if __name__=="__main__":
   model.eval()
 
   code_dir = os.path.dirname(os.path.realpath(__file__))
-
-  left_files = sorted(glob.glob(os.path.join(args.left_dir, '*_left.png')))
-  right_files = sorted(glob.glob(os.path.join(args.right_dir, '*_right.png')))
+  file_extension = 'png'
+  if args.realsense:
+    file_extension = 'jpg'
+  
+  left_files = sorted(glob.glob(os.path.join(args.left_dir, f'*_left.{file_extension}')))
+  right_files = sorted(glob.glob(os.path.join(args.right_dir, f'*_right.{file_extension}')))
   assert len(left_files) == len(right_files), "left and right files must have the same number of images"
 
   with open(args.intrinsic_file, 'rb') as f:
@@ -89,11 +93,19 @@ if __name__=="__main__":
   for i, left_file in enumerate(left_files):
     left_file_index = left_file.split('/')[-1].split('.')[0].split('_left')[0]
     print(f"Processing... {left_file_index}")
-    right_file = f"{args.right_dir}/{left_file_index}_right.png"
+    right_file = f"{args.right_dir}/{left_file_index}_right.{file_extension}"
     assert os.path.exists(right_file), f"right file {right_file} does not exist"
-    img0 = imageio.imread(left_file)[:,:,:3]
-    img1 = imageio.imread(right_file)[:,:,:3]
-    scale = args.scale
+
+    if args.realsense:
+      img0 = imageio.imread(left_file)
+      img1 = imageio.imread(right_file)   
+      # Convert back to 3-channel format for compatibility with the rest of the pipeline
+      img0 = cv2.cvtColor(img0, cv2.COLOR_GRAY2RGB)
+      img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2RGB)   
+    else:
+        img0 = imageio.imread(left_file)[:,:,:3]
+        img1 = imageio.imread(right_file)[:,:,:3]
+
     assert scale<=1, "scale must be <=1"
     img0 = cv2.resize(img0, fx=scale, fy=scale, dsize=None)
     img1 = cv2.resize(img1, fx=scale, fy=scale, dsize=None)
