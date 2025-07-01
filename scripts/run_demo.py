@@ -60,6 +60,16 @@ if __name__=="__main__":
   code_dir = os.path.dirname(os.path.realpath(__file__))
   img0 = imageio.imread(args.left_file)[:,:,:3]
   img1 = imageio.imread(args.right_file)[:,:,:3]
+
+  # Convert images to grayscale if they are RGB for the realsense grayscale images
+  # if img0.ndim == 3 and img0.shape[2] == 3:
+  #     img0 = cv2.cvtColor(img0, cv2.COLOR_RGB2GRAY)
+  #     img1 = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
+      
+  #     # Convert back to 3-channel format for compatibility with the rest of the pipeline
+  #     img0 = cv2.cvtColor(img0, cv2.COLOR_GRAY2RGB)
+  #     img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2RGB)
+  
   scale = args.scale
   assert scale<=1, "scale must be <=1"
   img0 = cv2.resize(img0, fx=scale, fy=scale, dsize=None)

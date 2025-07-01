@@ -3,3 +3,5 @@ output/*
 *.pyc
 weight/
 __pycache__
+test_outputs/*
+assets/*
