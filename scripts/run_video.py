@@ -15,6 +15,7 @@ from core.utils.utils import InputPadder
 from Utils import *
 from core.foundation_stereo import *
 import glob
+import numpy as np
 
 def save_depth(depth, filename):
     depth = np.nan_to_num(depth, nan=0.0)
@@ -85,7 +86,7 @@ if __name__=="__main__":
 
   with open(args.intrinsic_file, 'rb') as f:
     data = pickle.load(f)
-    K = data['stereo_camMat']
+    K = np.array(data['stereo_camMat'])
     baseline = data['stereo_baseline']
   scale = args.scale
   K[:2] *= scale    
