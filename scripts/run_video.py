@@ -104,8 +104,18 @@ if __name__=="__main__":
       img0 = cv2.cvtColor(img0, cv2.COLOR_GRAY2RGB)
       img1 = cv2.cvtColor(img1, cv2.COLOR_GRAY2RGB)   
     else:
-        img0 = imageio.imread(left_file)[:,:,:3]
-        img1 = imageio.imread(right_file)[:,:,:3]
+      img0 = np.array(imageio.imread(left_file))
+      img1 = np.array(imageio.imread(right_file))
+
+      if img0.ndim==2:
+        img0 = np.repeat(img0[...,None], 3, axis=2) # gray to 3-channel
+      else:
+        img0 = img0[:,:,:3]
+      
+      if img1.ndim==2:
+        img1 = np.repeat(img1[...,None], 3, axis=2) # gray to 3-channel
+      else:
+        img1 = img1[:,:,:3]
 
     assert scale<=1, "scale must be <=1"
     img0 = cv2.resize(img0, fx=scale, fy=scale, dsize=None)
