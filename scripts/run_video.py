@@ -145,14 +145,17 @@ if __name__=="__main__":
     imageio.imwrite(f'{args.out_dir}/vis{left_file_index}.png', vis)
     logging.info(f"Output saved to {args.out_dir}")
 
-    depth = K[0,0]*baseline/disp
-    save_depth(depth, f'{args.out_dir}/{left_file_index}.png')
-
     if args.remove_invisible:
       yy,xx = np.meshgrid(np.arange(disp.shape[0]), np.arange(disp.shape[1]), indexing='ij')
       us_right = xx-disp
       invalid = us_right<0
       disp[invalid] = np.inf
+
+    depth = K[0,0]*baseline/disp
+    save_depth(depth, f'{args.out_dir}/{left_file_index}.png')
+
+
+    # TODO: calculate the 
 
     if args.get_pc and i % args.ply_interval == 0:
 
