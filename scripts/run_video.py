@@ -8,9 +8,11 @@
 
 
 import os,sys
+import copy
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f'{code_dir}/../')
 from omegaconf import OmegaConf
+import matplotlib.pyplot as plt
 from core.utils.utils import InputPadder
 from Utils import *
 from core.foundation_stereo import *
@@ -43,6 +45,7 @@ if __name__=="__main__":
   parser.add_argument('--valid_iters', type=int, default=32, help='number of flow-field updates during forward pass')
   parser.add_argument('--get_pc', type=int, default=1, help='save point cloud output')
   parser.add_argument('--remove_invisible', default=1, type=int, help='remove non-overlapping observations between left and right images from point cloud, so the remaining points are more reliable')
+  parser.add_argument('--remove_black_pixels', default=1, type=int, help='remove black pixels in the right image, which are often invalid measurements')
   parser.add_argument('--denoise_cloud', action='store_true', help='whether to denoise the point cloud')
   parser.add_argument('--visualize_cloud', action='store_true', help='whether to visualize the point cloud')
   parser.add_argument('--denoise_nb_points', type=int, default=30, help='number of points to consider for radius outlier removal')
@@ -51,6 +54,7 @@ if __name__=="__main__":
   parser.add_argument('--ply_dir', type=str, default='ply', help='directory to save point cloud')
   parser.add_argument('--depth_scale', type=float, default=0.00012498664727900177, help='depth scale')
   parser.add_argument('--realsense', action='store_true', help='whether to use realsense images')
+  parser.add_argument('--get_uncertainty', action='store_true', help='whether to compute and save depth uncertainty map')
   args = parser.parse_args()
 
   set_logging_format()
@@ -120,6 +124,8 @@ if __name__=="__main__":
     assert scale<=1, "scale must be <=1"
     img0 = cv2.resize(img0, fx=scale, fy=scale, dsize=None)
     img1 = cv2.resize(img1, fx=scale, fy=scale, dsize=None)
+    img0_gray = cv2.cvtColor(img0, cv2.COLOR_RGB2GRAY)
+    img1_gray = cv2.cvtColor(img1, cv2.COLOR_RGB2GRAY)
     H,W = img0.shape[:2]
     img0_ori = img0.copy()
     logging.info(f"img0: {img0.shape}")
@@ -150,12 +156,59 @@ if __name__=="__main__":
       us_right = xx-disp
       invalid = us_right<0
       disp[invalid] = np.inf
+      if args.remove_black_pixels:
+        us_right_int = np.rint(us_right).astype(int)
+        in_bounds = (us_right_int >= 0) & (us_right_int < W)
+        valid_mask = (~invalid) & in_bounds
+        right_vals = np.zeros_like(disp, dtype=img1_gray.dtype)
+        right_vals[valid_mask] = img1_gray[yy[valid_mask], us_right_int[valid_mask]]
+
+      
+      black_mask = valid_mask & (right_vals == 0)  # right pixel is black
+      disp[black_mask] = np.inf
+
+
 
     depth = K[0,0]*baseline/disp
     save_depth(depth, f'{args.out_dir}/{left_file_index}.png')
 
+    if args.get_uncertainty:
+      # Calculate a depth uncertainty map using NCC around left/right matches
+      patch_size = 5
+      half_patch = patch_size // 2
+      img0_gray_f = img0_gray.astype(np.float32)
+      img1_gray_f = img1_gray.astype(np.float32)
+      padded0 = np.pad(img0_gray_f, half_patch, mode='reflect')
+      padded1 = np.pad(img1_gray_f, half_patch, mode='reflect')
+      uncertainty = np.full((H, W), np.nan, dtype=np.float32)
 
-    # TODO: calculate the 
+      for y in range(H):
+        y_pad = y + half_patch
+        for x in range(W):
+          d = disp[y, x]
+          if not np.isfinite(d):
+            continue
+          x_r = x - d  # matching point in the right image
+          x_r_int = int(round(x_r))
+          if x_r_int < 0 or x_r_int >= W:
+            continue
+
+          x_pad = x + half_patch
+          xr_pad = x_r_int + half_patch
+          left_patch = padded0[y_pad-half_patch:y_pad+half_patch+1, x_pad-half_patch:x_pad+half_patch+1]
+          right_patch = padded1[y_pad-half_patch:y_pad+half_patch+1, xr_pad-half_patch:xr_pad+half_patch+1]
+
+          left_patch = left_patch - left_patch.mean()
+          right_patch = right_patch - right_patch.mean()
+          denom = np.sqrt((left_patch**2).sum() * (right_patch**2).sum()) + 1e-6
+          ncc = float((left_patch * right_patch).sum() / denom)
+          ncc = max(min(ncc, 1.0), -1.0)
+          uncertainty[y, x] = 1.0 - ncc  # higher is less confident
+
+      p90 = np.nanpercentile(uncertainty, 90) if np.isfinite(uncertainty).any() else 1.0
+      uncertainty_to_save = np.nan_to_num(uncertainty, nan=p90)
+      plt.imsave(f'{args.out_dir}/uncertainty{left_file_index}.png', uncertainty_to_save, cmap='viridis', vmax=p90)
+    
 
     if args.get_pc and i % args.ply_interval == 0:
 
@@ -187,4 +240,3 @@ if __name__=="__main__":
         vis.get_render_option().background_color = np.array([0.5, 0.5, 0.5])
         vis.run()
         vis.destroy_window()
-
