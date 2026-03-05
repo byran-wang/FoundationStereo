@@ -146,9 +146,9 @@ if __name__=="__main__":
     print(f"forward time: {elapsed:.4f} seconds")
     disp = padder.unpad(disp.float())
     disp = disp.data.cpu().numpy().reshape(H,W)
-    vis = vis_disparity(disp)
-    vis = np.concatenate([img0_ori, vis], axis=1)
-    imageio.imwrite(f'{args.out_dir}/vis{left_file_index}.png', vis)
+    # vis = vis_disparity(disp)
+    # vis = np.concatenate([img0_ori, vis], axis=1)
+    # imageio.imwrite(f'{args.out_dir}/vis{left_file_index}.png', vis)
     logging.info(f"Output saved to {args.out_dir}")
 
     if args.remove_invisible:
