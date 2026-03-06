@@ -10,6 +10,7 @@
 import os,sys
 import copy
 import re
+import pickle
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f'{code_dir}/../')
 from omegaconf import OmegaConf
@@ -26,6 +27,21 @@ import sys
 sys.path.append('./third_party/utils_simba')
 from utils_simba.depth import save_depth, depth2xyzmap, xyz2depthmap
 from utils_simba.geometry import transform_points, save_point_cloud_to_ply
+
+def _load_pickle_compat(path):
+  with open(path, 'rb') as f:
+    try:
+      return pickle.load(f)
+    except ModuleNotFoundError as e:
+      if "numpy._core" not in str(e):
+        raise
+      f.seek(0)
+      class _NumpyCompatUnpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+          if module.startswith("numpy._core"):
+            module = module.replace("numpy._core", "numpy.core", 1)
+          return super().find_class(module, name)
+      return _NumpyCompatUnpickler(f).load()
 
 def transform_depth(depth_src, K_src, data_dir, frame_idx):
   unwarp_cali_path = Path(data_dir)/ "undistorted" / f"214-1_{frame_idx}_cali.json"
@@ -122,10 +138,9 @@ if __name__=="__main__":
     if os.path.exists(left_file) and os.path.exists(right_file):
       left_files.append(left_file)
 
-  with open(intrinsic_file, 'rb') as f:
-    data = pickle.load(f)
-    K = np.array(data['stereo_camMat'])
-    baseline = data['stereo_baseline']
+  data = _load_pickle_compat(intrinsic_file)
+  K = np.array(data['stereo_camMat'])
+  baseline = data['stereo_baseline']
   scale = args.scale
   K[:2] *= scale    
   logging.info(f"Output saved to {args.out_dir}")

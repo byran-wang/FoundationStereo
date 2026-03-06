@@ -9,6 +9,7 @@
 
 import os,sys
 import copy
+import pickle
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f'{code_dir}/../')
 from omegaconf import OmegaConf
@@ -18,6 +19,21 @@ from Utils import *
 from core.foundation_stereo import *
 import glob
 import numpy as np
+
+def _load_pickle_compat(path):
+  with open(path, 'rb') as f:
+    try:
+      return pickle.load(f)
+    except ModuleNotFoundError as e:
+      if "numpy._core" not in str(e):
+        raise
+      f.seek(0)
+      class _NumpyCompatUnpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+          if module.startswith("numpy._core"):
+            module = module.replace("numpy._core", "numpy.core", 1)
+          return super().find_class(module, name)
+      return _NumpyCompatUnpickler(f).load()
 
 def save_depth(depth, filename):
     depth = np.nan_to_num(depth, nan=0.0)
@@ -88,10 +104,9 @@ if __name__=="__main__":
   right_files = sorted(glob.glob(os.path.join(args.right_dir, f'*_right.{file_extension}')))
   assert len(left_files) == len(right_files), "left and right files must have the same number of images"
 
-  with open(args.intrinsic_file, 'rb') as f:
-    data = pickle.load(f)
-    K = np.array(data['stereo_camMat'])
-    baseline = data['stereo_baseline']
+  data = _load_pickle_compat(args.intrinsic_file)
+  K = np.array(data['stereo_camMat'])
+  baseline = data['stereo_baseline']
   scale = args.scale
   K[:2] *= scale    
 
