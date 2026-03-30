@@ -12,6 +12,7 @@ import copy
 import pickle
 code_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f'{code_dir}/../')
+sys.path.append(f'{code_dir}/../../../third_party/utils_simba')
 from omegaconf import OmegaConf
 import matplotlib.pyplot as plt
 from core.utils.utils import InputPadder
@@ -35,17 +36,7 @@ def _load_pickle_compat(path):
           return super().find_class(module, name)
       return _NumpyCompatUnpickler(f).load()
 
-def save_depth(depth, filename):
-    depth = np.nan_to_num(depth, nan=0.0)
-    depth[depth > 8.0] = 0
-    # Set depth to 0 if NaN
-    depth_scaled = (depth / args.depth_scale).astype(np.uint16)
-    depth_lsb = np.bitwise_and(depth_scaled, 0xFF)  # Least significant byte
-    depth_msb = np.right_shift(depth_scaled, 8)  # Most significant byte
-    depth_encoded = np.zeros((depth.shape[0], depth.shape[1], 3), dtype=np.uint8)
-    depth_encoded[..., 2] = depth_lsb
-    depth_encoded[..., 1] = depth_msb    
-    cv2.imwrite(filename, depth_encoded)
+from utils_simba.depth import save_depth
 
 if __name__=="__main__":
   code_dir = os.path.dirname(os.path.realpath(__file__))
